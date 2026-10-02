@@ -1,0 +1,6 @@
+{
+  "name": "ICARUS",
+  "description": "Offline-first mobile code editor and personal development environment.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
