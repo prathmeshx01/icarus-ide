@@ -92,9 +92,28 @@ fun TerminalShellPanel(
                 history.add(ShellOutput("  pwd              - Print working directory"))
                 history.add(ShellOutput("  cat <file>       - Output contents of a file"))
                 history.add(ShellOutput("  echo <text>      - Print text to stdout"))
+                history.add(ShellOutput("  python <file.py> - Execute Python script in offline runtime"))
                 history.add(ShellOutput("  date             - Display current date and time"))
                 history.add(ShellOutput("  clear            - Clear terminal screen"))
                 history.add(ShellOutput("  proot --info     - Check Alpine / Linux container status"))
+            }
+            "python", "python3" -> {
+                if (args.isEmpty()) {
+                    history.add(ShellOutput("Python 3.11.0 (Icarus Local Micro-Runtime, Oct 2026)"))
+                    history.add(ShellOutput("Usage: python <file.py>"))
+                } else {
+                    val target = File(projectDir, args[0])
+                    if (!target.exists()) {
+                        history.add(ShellOutput("python: can't open file '${args[0]}': [Errno 2] No such file or directory", isError = true))
+                    } else {
+                        val pyCode = target.readText(Charsets.UTF_8)
+                        val res = com.example.runtime.PythonEngine.execute(pyCode)
+                        if (res.output.isNotBlank()) {
+                            res.output.lines().filter { it.isNotBlank() }.forEach { history.add(ShellOutput(it)) }
+                        }
+                        res.errors.forEach { history.add(ShellOutput(it, isError = true)) }
+                    }
+                }
             }
             "clear" -> {
                 history.clear()

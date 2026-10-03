@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,7 +23,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -48,7 +46,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -63,7 +60,6 @@ import androidx.compose.ui.unit.sp
 import com.example.editor.CodeDiagnostic
 import com.example.editor.CodeFoldingDetector
 import com.example.editor.FoldingBlock
-import com.example.editor.QuickFix
 import com.example.editor.SyntaxHighlighter
 import com.example.ui.theme.AppEditorTheme
 
@@ -88,7 +84,6 @@ fun CodeEditor(
     onValueChange: (TextFieldValue) -> Unit,
     onInsertSymbol: (String, Int) -> Unit,
     onIndentLine: () -> Unit,
-    onApplyQuickFix: (QuickFix) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onReplaceQueryChange: (String) -> Unit,
     onFindNext: (Boolean) -> Unit,
@@ -105,7 +100,7 @@ fun CodeEditor(
         diagnostics.map { it.line }.toSet()
     }
 
-    // Detect collapsible blocks (braces, tags, indentation)
+    // Detect collapsible blocks
     val foldingBlocks = remember(editorValue.text, extension) {
         CodeFoldingDetector.detectFoldingBlocks(editorValue.text, extension)
     }
@@ -115,7 +110,6 @@ fun CodeEditor(
 
     var foldedStartLines by remember { mutableStateOf(setOf<Int>()) }
 
-    // Compute which line numbers are hidden inside folded regions
     val hiddenLines = remember(foldedStartLines, foldingBlocks) {
         val hidden = mutableSetOf<Int>()
         for (block in foldingBlocks) {
@@ -128,17 +122,13 @@ fun CodeEditor(
         hidden
     }
 
-    // Determine current line from cursor selection
+    // Determine current line
     val currentLine = remember(editorValue.selection, editorValue.text) {
         val sel = editorValue.selection.min.coerceIn(0, editorValue.text.length)
         editorValue.text.substring(0, sel).count { it == '\n' } + 1
     }
 
-    val activeLineDiagnostic = remember(diagnostics, currentLine) {
-        diagnostics.firstOrNull { it.line == currentLine }
-    }
-
-    // Visual transformation with Syntax Highlighting and Code Folding
+    // Visual Transformation with Syntax Highlighting
     val visualTransformation = remember(extension, theme, foldedStartLines, foldingBlocks, editorValue.text) {
         VisualTransformation { original ->
             if (foldedStartLines.isEmpty()) {
@@ -153,14 +143,14 @@ fun CodeEditor(
     val verticalScrollState = rememberScrollState()
     val horizontalScrollState = rememberScrollState()
 
-    val calculatedLineHeight = (fontSizeSp * 1.55f).sp
+    val calculatedLineHeight = (fontSizeSp * 1.58f).sp
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(theme.background)
     ) {
-        // Find & Replace Overlay Drawer with Regex support
+        // Find & Replace Overlay Drawer
         if (isSearchOpen) {
             SearchReplaceBar(
                 searchQuery = searchQuery,
@@ -175,58 +165,15 @@ fun CodeEditor(
             )
         }
 
-        // Quick Fix Action Banner (if active line has error with fix)
-        activeLineDiagnostic?.quickFix?.let { fix ->
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = theme.sidebarBg,
-                border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentColor)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.AutoFixHigh,
-                            contentDescription = null,
-                            tint = theme.accentColor,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = activeLineDiagnostic.message,
-                            fontSize = 11.sp,
-                            color = Color.White,
-                            maxLines = 1
-                        )
-                    }
-                    Button(
-                        onClick = { onApplyQuickFix(fix) },
-                        colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
-                        shape = RoundedCornerShape(4.dp),
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Text(fix.title, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
-        // Main Editor Area with Gutter & Text Area
+        // Main Code Canvas Area with Line Numbers Gutter
         Row(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
         ) {
-            // Gutter Column: Line numbers, active line highlight, folding toggles, Git diff marks
             if (showLineNumbers) {
                 val gutterWidth = remember(lineCount) {
-                    if (lineCount > 999) 66.dp else if (lineCount > 99) 56.dp else 48.dp
+                    if (lineCount > 999) 58.dp else if (lineCount > 99) 48.dp else 40.dp
                 }
 
                 Box(
@@ -234,14 +181,14 @@ fun CodeEditor(
                         .width(gutterWidth)
                         .fillMaxHeight()
                         .background(theme.gutterBg)
-                        .border(1.dp, theme.border)
+                        .border(0.5.dp, theme.border)
                         .verticalScroll(verticalScrollState)
-                        .padding(vertical = 12.dp),
+                        .padding(vertical = 10.dp),
                     contentAlignment = Alignment.TopEnd
                 ) {
                     Column(horizontalAlignment = Alignment.End) {
                         for (i in 1..lineCount) {
-                            if (i in hiddenLines) continue // Line is hidden by folding
+                            if (i in hiddenLines) continue
 
                             val hasError = i in errorLines
                             val isCurrent = i == currentLine
@@ -256,21 +203,21 @@ fun CodeEditor(
                                     .height(calculatedLineHeight.value.dp)
                                     .background(if (isCurrent) Color(0xFF1E2025) else Color.Transparent)
                             ) {
-                                // Git Diff Marker (green bar on left)
+                                // Git modification indicator
                                 Box(
                                     modifier = Modifier
-                                        .width(3.dp)
+                                        .width(2.5.dp)
                                         .fillMaxHeight()
-                                        .background(if (i % 2 == 0) Color(0xFF3FB950) else Color.Transparent)
+                                        .background(if (i % 3 == 0) Color(0xFF3FB950) else Color.Transparent)
                                 )
 
                                 Spacer(modifier = Modifier.width(2.dp))
 
-                                // Code folding toggle button
+                                // Code folding icon
                                 if (foldingBlock != null) {
                                     Box(
                                         modifier = Modifier
-                                            .size(16.dp)
+                                            .size(14.dp)
                                             .clickable {
                                                 foldedStartLines = if (isFolded) {
                                                     foldedStartLines - i
@@ -285,17 +232,17 @@ fun CodeEditor(
                                             imageVector = if (isFolded) Icons.Default.KeyboardArrowRight else Icons.Default.KeyboardArrowDown,
                                             contentDescription = if (isFolded) "Expand line $i" else "Collapse line $i",
                                             tint = if (isFolded) theme.accentColor else theme.textSecondary,
-                                            modifier = Modifier.size(14.dp)
+                                            modifier = Modifier.size(12.dp)
                                         )
                                     }
                                 } else {
-                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Spacer(modifier = Modifier.width(14.dp))
                                 }
 
                                 if (hasError) {
                                     Box(
                                         modifier = Modifier
-                                            .size(4.dp)
+                                            .size(3.dp)
                                             .background(Color(0xFFF85149), CircleShape)
                                     )
                                     Spacer(modifier = Modifier.width(2.dp))
@@ -306,7 +253,7 @@ fun CodeEditor(
                                     color = when {
                                         hasError -> Color(0xFFF85149)
                                         isCurrent -> Color.White
-                                        else -> theme.textSecondary.copy(alpha = 0.6f)
+                                        else -> theme.textSecondary.copy(alpha = 0.5f)
                                     },
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = fontSizeSp.sp,
@@ -321,20 +268,20 @@ fun CodeEditor(
                 }
             }
 
-            // Editable Code Area with Active Line Highlight
+            // Editable Monospaced Code Text Canvas
             val codeBoxModifier = if (wordWrap) {
                 Modifier
                     .weight(1f)
                     .fillMaxHeight()
                     .verticalScroll(verticalScrollState)
-                    .padding(horizontal = 10.dp, vertical = 12.dp)
+                    .padding(horizontal = 8.dp, vertical = 10.dp)
             } else {
                 Modifier
                     .weight(1f)
                     .fillMaxHeight()
                     .verticalScroll(verticalScrollState)
                     .horizontalScroll(horizontalScrollState)
-                    .padding(horizontal = 10.dp, vertical = 12.dp)
+                    .padding(horizontal = 8.dp, vertical = 10.dp)
             }
 
             Box(modifier = codeBoxModifier) {
@@ -344,6 +291,7 @@ fun CodeEditor(
                     textStyle = TextStyle(
                         fontFamily = FontFamily.Monospace,
                         fontSize = fontSizeSp.sp,
+                        letterSpacing = 0.4.sp,
                         lineHeight = calculatedLineHeight,
                         color = theme.textPrimary
                     ),
@@ -361,7 +309,7 @@ fun CodeEditor(
             }
         }
 
-        // Context-Aware Symbol Bar (Sticky keyboard accessory row with imePadding)
+        // Clean, Compact Customizable Symbol Toolbar (Flush at bottom)
         SymbolToolbar(
             theme = theme,
             canUndo = canUndo,
@@ -369,14 +317,13 @@ fun CodeEditor(
             onUndo = onUndo,
             onRedo = onRedo,
             onInsertSymbol = onInsertSymbol,
-            onIndent = onIndentLine,
-            modifier = Modifier.imePadding()
+            onIndent = onIndentLine
         )
     }
 }
 
 /**
- * Creates visual transformation when code folding is active, collapsing folded regions.
+ * Visual transformation collapsing folded code regions.
  */
 private fun createFoldedTransformedText(
     fullText: String,
@@ -393,7 +340,6 @@ private fun createFoldedTransformedText(
         currentOffset += line.length + 1
     }
 
-    // Active folded blocks sorted by startLine
     val activeBlocks = blocks.filter { it.startLine in foldedStarts }.sortedBy { it.startLine }
 
     val transformedBuilder = StringBuilder()
@@ -517,7 +463,6 @@ fun SearchReplaceBar(
 
                 Spacer(modifier = Modifier.width(6.dp))
 
-                // Regex toggle button
                 Surface(
                     modifier = Modifier.clickable { isRegex = !isRegex },
                     color = if (isRegex) theme.accentColor else Color(0x1AFFFFFF),

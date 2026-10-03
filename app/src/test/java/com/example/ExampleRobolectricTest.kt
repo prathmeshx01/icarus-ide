@@ -8,9 +8,11 @@ import com.example.data.SettingsManager
 import com.example.editor.CodeFoldingDetector
 import com.example.editor.DiagnosticSeverity
 import com.example.editor.ErrorDetector
+import com.example.editor.PreviewBundler
 import com.example.editor.SyntaxHighlighter
 import com.example.model.ProjectType
 import com.example.ui.theme.AppEditorTheme
+import com.example.ui.workspace.WorkspaceViewModel
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -59,6 +61,39 @@ class ExampleRobolectricTest {
         val folderNode = updatedTree.find { it.name == "components" && it.isDirectory }
         assertNotNull(folderNode)
         assertTrue(folderNode!!.children.any { it.name == "button.js" })
+    }
+
+    @Test
+    fun `switching workspaces loads corresponding project code and does not retain old tabs`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val projectRepo = ProjectRepository(context)
+        val fileRepo = FileRepository()
+        val viewModel = WorkspaceViewModel(projectRepo, fileRepo)
+
+        val projectA = projectRepo.createProject("Project Alpha", ProjectType.CANVAS)
+        val projectB = projectRepo.createProject("Project Beta", ProjectType.PYTHON)
+
+        viewModel.loadProjectSync(projectA)
+        assertEquals(projectA.id, viewModel.uiState.value.project?.id)
+        assertTrue(viewModel.uiState.value.openTabs.isNotEmpty())
+        assertEquals("index.html", viewModel.uiState.value.openTabs.first().file.name)
+
+        viewModel.loadProjectSync(projectB)
+        assertEquals(projectB.id, viewModel.uiState.value.project?.id)
+        assertTrue(viewModel.uiState.value.openTabs.isNotEmpty())
+        assertEquals("main.py", viewModel.uiState.value.openTabs.first().file.name)
+    }
+
+    @Test
+    fun `preview bundler inlines local css and js`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val projectRepo = ProjectRepository(context)
+        val project = projectRepo.createProject("Bundle Test", ProjectType.WEB)
+
+        val bundled = PreviewBundler.bundleHtml(project)
+        assertTrue(bundled.contains("__icarus_runtime_instrumentation"))
+        assertTrue(bundled.contains("<style id=\"__inline_style.css\"") || bundled.contains("<style"))
+        assertTrue(bundled.contains("<script id=\"__inline_script.js\"") || bundled.contains("<script"))
     }
 
     @Test
@@ -138,6 +173,48 @@ class ExampleRobolectricTest {
         val highlighted = SyntaxHighlighter.highlight(jsCode, "js", AppEditorTheme.OBSIDIAN_DARK)
         assertEquals(jsCode, highlighted.text)
         assertTrue(highlighted.spanStyles.isNotEmpty())
+    }
+
+    @Test
+    fun `autoCloser automatically completes HTML closing tags and brackets`() {
+        val oldVal = androidx.compose.ui.text.input.TextFieldValue("<html")
+        val newVal = androidx.compose.ui.text.input.TextFieldValue("<html>", androidx.compose.ui.text.TextRange(6))
+        val completed = com.example.editor.AutoCloser.handleTextChange(oldVal, newVal, "html")
+        assertEquals("<html></html>", completed.text)
+        assertEquals(6, completed.selection.min)
+
+        val oldDiv = androidx.compose.ui.text.input.TextFieldValue("<div")
+        val newDiv = androidx.compose.ui.text.input.TextFieldValue("<div>", androidx.compose.ui.text.TextRange(5))
+        val completedDiv = com.example.editor.AutoCloser.handleTextChange(oldDiv, newDiv, "html")
+        assertEquals("<div></div>", completedDiv.text)
+        assertEquals(5, completedDiv.selection.min)
+
+        val oldBrace = androidx.compose.ui.text.input.TextFieldValue("")
+        val newBrace = androidx.compose.ui.text.input.TextFieldValue("{", androidx.compose.ui.text.TextRange(1))
+        val completedBrace = com.example.editor.AutoCloser.handleTextChange(oldBrace, newBrace, "js")
+        assertEquals("{}", completedBrace.text)
+        assertEquals(1, completedBrace.selection.min)
+    }
+
+    @Test
+    fun `python local micro-interpreter executes print, loops, and math`() {
+        val pyCode = """
+            def greet(name):
+                return "Hello " + name
+            
+            total = 0
+            for i in range(5):
+                total = total + i
+            
+            msg = greet("Icarus")
+            print(msg)
+            print("Total:", total)
+        """.trimIndent()
+
+        val res = com.example.runtime.PythonEngine.execute(pyCode)
+        assertTrue(res.isSuccess)
+        assertTrue(res.output.contains("Hello Icarus"))
+        assertTrue(res.output.contains("Total: 10"))
     }
 
     @Test

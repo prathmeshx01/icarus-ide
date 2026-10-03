@@ -75,66 +75,99 @@ class WorkspaceViewModel(
     private val redoStack = mutableListOf<TextFieldValue>()
 
     fun loadProject(project: Project) {
-        _uiState.update { it.copy(project = project, isPreviewOpen = false, showPreflightErrorDialog = false) }
-        refreshFiles(autoOpenEntry = true)
+        viewModelScope.launch {
+            loadProjectSync(project)
+        }
+    }
+
+    suspend fun loadProjectSync(project: Project) {
+        undoStack.clear()
+        redoStack.clear()
+        _uiState.update {
+            it.copy(
+                project = project,
+                files = emptyList(),
+                fileTree = emptyList(),
+                openTabs = emptyList(),
+                activeTabIndex = 0,
+                currentEditorValue = TextFieldValue(""),
+                cursorLine = 1,
+                cursorColumn = 1,
+                diagnostics = emptyList(),
+                consoleLogs = emptyList(),
+                isPreviewOpen = false,
+                showPreflightErrorDialog = false,
+                canUndo = false,
+                canRedo = false
+            )
+        }
+        refreshFilesSync(autoOpenEntry = true)
     }
 
     fun refreshFiles(autoOpenEntry: Boolean = false) {
-        val proj = _uiState.value.project ?: return
         viewModelScope.launch {
-            val root = File(proj.rootDirPath)
-            val list = fileRepository.listFiles(root)
-            val tree = fileRepository.loadFileTree(root)
-            _uiState.update { it.copy(files = list, fileTree = tree) }
+            refreshFilesSync(autoOpenEntry)
+        }
+    }
 
-            if (autoOpenEntry && _uiState.value.openTabs.isEmpty()) {
-                val entryFile = when (proj.type) {
-                    ProjectType.WEB, ProjectType.CANVAS, ProjectType.PORTFOLIO, ProjectType.BLANK ->
-                        list.find { it.name.equals("index.html", ignoreCase = true) }
-                    ProjectType.KOTLIN ->
-                        list.find { it.name.equals("main.kt", ignoreCase = true) }
-                    ProjectType.PYTHON ->
-                        list.find { it.name.equals("main.py", ignoreCase = true) }
-                } ?: list.firstOrNull { !it.isDirectory }
+    suspend fun refreshFilesSync(autoOpenEntry: Boolean = false) {
+        val proj = _uiState.value.project ?: return
+        val root = File(proj.rootDirPath)
+        val list = fileRepository.listFiles(root)
+        val tree = fileRepository.loadFileTree(root)
+        _uiState.update { it.copy(files = list, fileTree = tree) }
 
-                entryFile?.let { openFile(it) }
-            }
+        if (autoOpenEntry) {
+            val entryFile = when (proj.type) {
+                ProjectType.WEB, ProjectType.REACT, ProjectType.VUE, ProjectType.TAILWIND, ProjectType.CANVAS, ProjectType.PORTFOLIO, ProjectType.BLANK ->
+                    list.find { it.name.equals("index.html", ignoreCase = true) }
+                ProjectType.KOTLIN ->
+                    list.find { it.name.equals("main.kt", ignoreCase = true) }
+                ProjectType.PYTHON ->
+                    list.find { it.name.equals("main.py", ignoreCase = true) }
+            } ?: list.firstOrNull { !it.isDirectory }
+
+            entryFile?.let { openFileSync(it) }
         }
     }
 
     fun openFile(file: ProjectFile) {
+        viewModelScope.launch {
+            openFileSync(file)
+        }
+    }
+
+    suspend fun openFileSync(file: ProjectFile) {
         val existingIndex = _uiState.value.openTabs.indexOfFirst { it.file.absolutePath == file.absolutePath }
         if (existingIndex >= 0) {
             switchTab(existingIndex)
             return
         }
 
-        viewModelScope.launch {
-            val result = fileRepository.readFile(File(file.absolutePath))
-            result.onSuccess { content ->
-                val newTab = EditorTab(file = file, content = content, isDirty = false)
-                val newTabs = _uiState.value.openTabs + newTab
-                val newIndex = newTabs.lastIndex
-                val errors = ErrorDetector.detectErrors(content, file.extension)
+        val result = fileRepository.readFile(File(file.absolutePath))
+        result.onSuccess { content ->
+            val newTab = EditorTab(file = file, content = content, isDirty = false)
+            val newTabs = _uiState.value.openTabs + newTab
+            val newIndex = newTabs.lastIndex
+            val errors = ErrorDetector.detectErrors(content, file.extension)
 
-                undoStack.clear()
-                redoStack.clear()
+            undoStack.clear()
+            redoStack.clear()
 
-                _uiState.update {
-                    it.copy(
-                        openTabs = newTabs,
-                        activeTabIndex = newIndex,
-                        currentEditorValue = TextFieldValue(text = content, selection = TextRange(0)),
-                        cursorLine = 1,
-                        cursorColumn = 1,
-                        diagnostics = errors,
-                        canUndo = false,
-                        canRedo = false
-                    )
-                }
-            }.onFailure { err ->
-                emitMessage("Failed to open file: ${err.message}")
+            _uiState.update {
+                it.copy(
+                    openTabs = newTabs,
+                    activeTabIndex = newIndex,
+                    currentEditorValue = TextFieldValue(text = content, selection = TextRange(0)),
+                    cursorLine = 1,
+                    cursorColumn = 1,
+                    diagnostics = errors,
+                    canUndo = false,
+                    canRedo = false
+                )
             }
+        }.onFailure { err ->
+            emitMessage("Failed to open file: ${err.message}")
         }
     }
 
@@ -231,13 +264,23 @@ class WorkspaceViewModel(
 
     fun onEditorTextChange(newValue: TextFieldValue) {
         val prev = _uiState.value.currentEditorValue
-        if (prev.text != newValue.text) {
+        val activeIndex = _uiState.value.activeTabIndex
+        val currentExt = _uiState.value.openTabs.getOrNull(activeIndex)?.file?.extension ?: "txt"
+
+        val processedValue = com.example.editor.AutoCloser.handleTextChange(
+            oldValue = prev,
+            newValue = newValue,
+            extension = currentExt,
+            autoCloseBrackets = true
+        )
+
+        if (prev.text != processedValue.text) {
             undoStack.add(prev)
             if (undoStack.size > 50) undoStack.removeAt(0)
             redoStack.clear()
         }
 
-        applyNewValue(newValue)
+        applyNewValue(processedValue)
     }
 
     private fun applyNewValue(newValue: TextFieldValue) {
@@ -366,7 +409,10 @@ class WorkspaceViewModel(
     fun saveCurrentTab(formatOnSave: Boolean = false, onSaved: (() -> Unit)? = null) {
         val activeIndex = _uiState.value.activeTabIndex
         val tabs = _uiState.value.openTabs.toMutableList()
-        if (activeIndex !in tabs.indices) return
+        if (activeIndex !in tabs.indices) {
+            onSaved?.invoke()
+            return
+        }
 
         val currentTab = tabs[activeIndex]
         val file = File(currentTab.file.absolutePath)
@@ -396,6 +442,31 @@ class WorkspaceViewModel(
                 _uiState.update { it.copy(isSaving = false) }
                 emitMessage("Error saving file: ${err.message}")
             }
+        }
+    }
+
+    fun saveAllDirtyTabs(onComplete: () -> Unit) {
+        val tabs = _uiState.value.openTabs.toMutableList()
+        val activeIdx = _uiState.value.activeTabIndex
+
+        if (activeIdx in tabs.indices) {
+            val cur = tabs[activeIdx]
+            val newText = _uiState.value.currentEditorValue.text
+            tabs[activeIdx] = cur.copy(content = newText, isDirty = newText != cur.lastSavedContent)
+        }
+
+        viewModelScope.launch {
+            for (i in tabs.indices) {
+                val tab = tabs[i]
+                if (tab.isDirty) {
+                    val file = File(tab.file.absolutePath)
+                    fileRepository.saveFile(file, tab.content)
+                    tabs[i] = tab.copy(isDirty = false, lastSavedContent = tab.content)
+                }
+            }
+            _uiState.update { it.copy(openTabs = tabs) }
+            _uiState.value.project?.let { p -> projectRepository.touchProject(p) }
+            onComplete()
         }
     }
 
@@ -512,7 +583,6 @@ class WorkspaceViewModel(
         val severeErrors = detectedErrors.filter { it.severity == DiagnosticSeverity.ERROR }
 
         if (!force && severeErrors.isNotEmpty()) {
-            // Show pre-flight error validation dialog explaining errors
             _uiState.update {
                 it.copy(
                     showPreflightErrorDialog = true,
@@ -523,16 +593,32 @@ class WorkspaceViewModel(
             return
         }
 
-        // Proceed to save and launch offline preview
-        _uiState.update { it.copy(showPreflightErrorDialog = false) }
-        saveCurrentTab {
+        saveAllDirtyTabs {
+            val isPy = proj.type == ProjectType.PYTHON || _uiState.value.openTabs.any { it.file.extension == "py" }
+            val initialLogs = mutableListOf<ConsoleLogEntry>()
+            initialLogs.add(ConsoleLogEntry("INFO", "Running ${proj.name}..."))
+            initialLogs.add(ConsoleLogEntry("INFO", "Base: file://${File(proj.rootDirPath).name}/"))
+
+            if (isPy) {
+                val pyCode = _uiState.value.openTabs.find { it.file.extension == "py" }?.content
+                    ?: _uiState.value.currentEditorValue.text
+                val pyRes = com.example.runtime.PythonEngine.execute(pyCode)
+                if (pyRes.output.isNotBlank()) {
+                    pyRes.output.lines().filter { it.isNotBlank() }.forEach { line ->
+                        initialLogs.add(ConsoleLogEntry("LOG", line, "Python", null))
+                    }
+                }
+                pyRes.errors.forEach { err ->
+                    initialLogs.add(ConsoleLogEntry("ERROR", err, "Python", null))
+                }
+                initialLogs.add(ConsoleLogEntry("INFO", "Execution finished in ${pyRes.executionTimeMs}ms (Exit: ${if (pyRes.isSuccess) 0 else 1})"))
+            }
+
             _uiState.update {
                 it.copy(
+                    showPreflightErrorDialog = false,
                     isPreviewOpen = true,
-                    consoleLogs = listOf(
-                        ConsoleLogEntry("INFO", "Starting offline WebView rendering engine..."),
-                        ConsoleLogEntry("INFO", "Workspace: ${File(proj.rootDirPath).name}")
-                    )
+                    consoleLogs = initialLogs
                 )
             }
         }

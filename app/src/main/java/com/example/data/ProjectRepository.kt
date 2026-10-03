@@ -63,13 +63,21 @@ class ProjectRepository(private val context: Context) {
     suspend fun ensureInitialProjectIfEmpty(): Project? = withContext(Dispatchers.IO) {
         val current = refreshProjects()
         if (current.isEmpty()) {
-            createProject("Canvas Particle Simulation", ProjectType.CANVAS)
+            createProject("HTML5 Starter", ProjectType.WEB)
         } else {
             null
         }
     }
 
-    suspend fun createProject(name: String, type: ProjectType): Project = withContext(Dispatchers.IO) {
+    suspend fun createProject(
+        name: String,
+        type: ProjectType,
+        includeHtml: Boolean = true,
+        includeCss: Boolean = true,
+        includeJs: Boolean = true,
+        includePy: Boolean = false,
+        includeReadme: Boolean = false
+    ): Project = withContext(Dispatchers.IO) {
         val sanitizedName = name.trim().ifBlank { "Untitled Project" }
         val id = "proj_" + UUID.randomUUID().toString().take(8)
         val dir = File(projectsRoot, id).apply { mkdirs() }
@@ -84,36 +92,74 @@ class ProjectRepository(private val context: Context) {
         }
         File(dir, ".icarus_meta.json").writeText(metaJson.toString())
 
-        val fileCount: Int
+        var count = 0
         when (type) {
             ProjectType.WEB -> {
                 File(dir, "index.html").writeText(ProjectTemplates.DEFAULT_HTML)
                 File(dir, "style.css").writeText(ProjectTemplates.DEFAULT_CSS)
                 File(dir, "script.js").writeText(ProjectTemplates.DEFAULT_JS)
-                fileCount = 3
+                count = 3
+            }
+            ProjectType.REACT -> {
+                File(dir, "index.html").writeText(ProjectTemplates.REACT_HTML)
+                File(dir, "app.jsx").writeText(ProjectTemplates.REACT_JSX)
+                File(dir, "style.css").writeText(ProjectTemplates.DEFAULT_CSS)
+                count = 3
+            }
+            ProjectType.VUE -> {
+                File(dir, "index.html").writeText(ProjectTemplates.VUE_HTML)
+                File(dir, "app.js").writeText(ProjectTemplates.VUE_JS)
+                File(dir, "style.css").writeText(ProjectTemplates.DEFAULT_CSS)
+                count = 3
+            }
+            ProjectType.TAILWIND -> {
+                File(dir, "index.html").writeText(ProjectTemplates.TAILWIND_HTML)
+                count = 1
             }
             ProjectType.CANVAS -> {
                 File(dir, "index.html").writeText(ProjectTemplates.CANVAS_HTML)
                 File(dir, "script.js").writeText(ProjectTemplates.CANVAS_JS)
-                fileCount = 2
+                count = 2
             }
             ProjectType.PORTFOLIO -> {
                 File(dir, "index.html").writeText(ProjectTemplates.PORTFOLIO_HTML)
                 File(dir, "style.css").writeText(ProjectTemplates.PORTFOLIO_CSS)
                 File(dir, "script.js").writeText(ProjectTemplates.PORTFOLIO_JS)
-                fileCount = 3
+                count = 3
             }
             ProjectType.KOTLIN -> {
                 File(dir, "main.kt").writeText(ProjectTemplates.KOTLIN_CODE)
-                fileCount = 1
+                count = 1
             }
             ProjectType.PYTHON -> {
                 File(dir, "main.py").writeText(ProjectTemplates.PYTHON_CODE)
-                fileCount = 1
+                count = 1
             }
             ProjectType.BLANK -> {
-                File(dir, "index.html").writeText(ProjectTemplates.BLANK_HTML)
-                fileCount = 1
+                if (includeHtml) {
+                    File(dir, "index.html").writeText(ProjectTemplates.DEFAULT_HTML)
+                    count++
+                }
+                if (includeCss) {
+                    File(dir, "style.css").writeText(ProjectTemplates.DEFAULT_CSS)
+                    count++
+                }
+                if (includeJs) {
+                    File(dir, "script.js").writeText(ProjectTemplates.DEFAULT_JS)
+                    count++
+                }
+                if (includePy) {
+                    File(dir, "main.py").writeText(ProjectTemplates.PYTHON_CODE)
+                    count++
+                }
+                if (includeReadme) {
+                    File(dir, "README.md").writeText(ProjectTemplates.README_MD)
+                    count++
+                }
+                if (count == 0) {
+                    File(dir, "index.html").writeText(ProjectTemplates.BLANK_HTML)
+                    count = 1
+                }
             }
         }
 
@@ -124,7 +170,7 @@ class ProjectRepository(private val context: Context) {
             createdAt = now,
             updatedAt = now,
             rootDirPath = dir.absolutePath,
-            fileCount = fileCount
+            fileCount = count
         )
 
         refreshProjects()

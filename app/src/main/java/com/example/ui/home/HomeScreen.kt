@@ -3,6 +3,7 @@ package com.example.ui.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,17 +18,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Terminal
@@ -36,6 +40,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -59,7 +65,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -85,6 +90,17 @@ fun HomeScreen(
     val state by viewModel.uiState.collectAsState()
     val settings by settingsManager.settings.collectAsState()
     val theme = settings.theme
+
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedCategoryFilter by remember { mutableStateOf<ProjectType?>(null) }
+
+    val filteredProjects = remember(state.projects, searchQuery, selectedCategoryFilter) {
+        state.projects.filter { p ->
+            val matchesQuery = searchQuery.isBlank() || p.name.contains(searchQuery, ignoreCase = true)
+            val matchesCategory = selectedCategoryFilter == null || p.type == selectedCategoryFilter
+            matchesQuery && matchesCategory
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -118,7 +134,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "CORE",
+                            text = "IDE",
                             fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
@@ -173,12 +189,12 @@ fun HomeScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Alive, Intriguing Hero Banner with Ambient Gradient
+            // Hero Card
             item {
                 VibrantHeroCard(
                     theme = theme,
                     onCreateProject = { viewModel.openNewProjectDialog() },
-                    onQuickScratchpad = { viewModel.createProject("Quick Scratchpad", ProjectType.BLANK) }
+                    onQuickScratchpad = { viewModel.createProject("HTML5 Starter", ProjectType.WEB) }
                 )
             }
 
@@ -190,6 +206,57 @@ fun HomeScreen(
                         viewModel.createProject(defaultName, type)
                     }
                 )
+            }
+
+            // Search & Category Filter Row
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Filter workspaces...", fontSize = 12.sp, color = theme.textSecondary) },
+                        leadingIcon = {
+                            Icon(Icons.Default.Search, contentDescription = null, tint = theme.textSecondary, modifier = Modifier.size(16.dp))
+                        },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = theme.accentColor,
+                            unfocusedBorderColor = theme.border,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxWidth().height(42.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Horizontal Category Pills
+                    val filterScrollState = rememberScrollState()
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(filterScrollState),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CategoryFilterChip(
+                            label = "All (${state.projects.size})",
+                            isSelected = selectedCategoryFilter == null,
+                            theme = theme,
+                            onClick = { selectedCategoryFilter = null }
+                        )
+
+                        ProjectType.values().forEach { type ->
+                            val count = state.projects.count { it.type == type }
+                            if (count > 0 || state.projects.isEmpty()) {
+                                CategoryFilterChip(
+                                    label = "${type.badge} ($count)",
+                                    isSelected = selectedCategoryFilter == type,
+                                    theme = theme,
+                                    onClick = { selectedCategoryFilter = if (selectedCategoryFilter == type) null else type }
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // Workspaces Header
@@ -208,7 +275,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "(${state.projects.size})",
+                            text = "(${filteredProjects.size})",
                             fontSize = 12.sp,
                             color = theme.textSecondary,
                             fontFamily = FontFamily.Monospace
@@ -218,12 +285,12 @@ fun HomeScreen(
             }
 
             // Projects List or Empty State
-            if (state.projects.isEmpty()) {
+            if (filteredProjects.isEmpty()) {
                 item {
                     EmptyProjectsCard(theme = theme, onCreateProject = { viewModel.openNewProjectDialog() })
                 }
             } else {
-                items(state.projects, key = { it.id }) { project ->
+                items(filteredProjects, key = { it.id }) { project ->
                     WorkspaceCard(
                         project = project,
                         theme = theme,
@@ -239,12 +306,22 @@ fun HomeScreen(
         }
     }
 
-    // Modal: New Project with 6 Diverse Options
+    // Modal: New Project with Boilerplate Templates and Language Options
     if (state.showNewProjectDialog) {
         NewProjectDialog(
             theme = theme,
             onDismiss = { viewModel.closeNewProjectDialog() },
-            onCreate = { name, type -> viewModel.createProject(name, type) }
+            onCreate = { name, type, html, css, js, py, readme ->
+                viewModel.createProject(
+                    name = name,
+                    type = type,
+                    includeHtml = html,
+                    includeCss = css,
+                    includeJs = js,
+                    includePy = py,
+                    includeReadme = readme
+                )
+            }
         )
     }
 
@@ -276,6 +353,30 @@ fun HomeScreen(
                     Text("Cancel", color = theme.textSecondary, fontSize = 12.sp)
                 }
             }
+        )
+    }
+}
+
+@Composable
+fun CategoryFilterChip(
+    label: String,
+    isSelected: Boolean,
+    theme: AppEditorTheme,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        color = if (isSelected) theme.accentColor else theme.sidebarBg,
+        shape = RoundedCornerShape(4.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) theme.accentColor else theme.border)
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+            color = if (isSelected) Color.White else theme.textSecondary,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         )
     }
 }
@@ -314,7 +415,7 @@ fun VibrantHeroCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Code Workspace",
+                        text = "Icarus IDE Workspace",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -330,8 +431,8 @@ fun VibrantHeroCard(
                                 .background(Color(0xFF3FB950), CircleShape)
                         )
                         Text(
-                            text = "LIVE",
-                            fontSize = 10.sp,
+                            text = "OFFLINE ENGINE",
+                            fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF3FB950)
@@ -342,7 +443,7 @@ fun VibrantHeroCard(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
-                    text = "High-precision syntax highlighting, live preview, and code folding.",
+                    text = "High-speed syntax highlighting, boilerplate templates, and live preview runtime.",
                     fontSize = 12.sp,
                     color = theme.textSecondary,
                     lineHeight = 16.sp
@@ -371,7 +472,7 @@ fun VibrantHeroCard(
                     ) {
                         Icon(Icons.Default.FlashOn, contentDescription = null, tint = theme.accentColor, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Scratchpad", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 11.sp)
+                        Text("HTML5 Basic", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 11.sp)
                     }
                 }
             }
@@ -386,15 +487,19 @@ fun StarterPillRow(
     modifier: Modifier = Modifier
 ) {
     val starters = listOf(
-        Triple("Canvas Simulation", ProjectType.CANVAS, Icons.Default.SportsEsports),
-        Triple("Web App", ProjectType.WEB, Icons.Default.Code),
-        Triple("Portfolio", ProjectType.PORTFOLIO, Icons.Default.Language),
-        Triple("Kotlin Algorithm", ProjectType.KOTLIN, Icons.Default.Terminal)
+        Triple("HTML5 Starter", ProjectType.WEB, Icons.Default.Code),
+        Triple("React 18", ProjectType.REACT, Icons.Default.Language),
+        Triple("Vue 3", ProjectType.VUE, Icons.Default.Language),
+        Triple("Tailwind", ProjectType.TAILWIND, Icons.Default.Description),
+        Triple("Canvas 2D", ProjectType.CANVAS, Icons.Default.SportsEsports),
+        Triple("Python Script", ProjectType.PYTHON, Icons.Default.Terminal)
     )
+
+    val scrollState = rememberScrollState()
 
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text = "Quick Starters",
+            text = "Boilerplate Templates",
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             color = theme.textSecondary,
@@ -403,30 +508,30 @@ fun StarterPillRow(
         Spacer(modifier = Modifier.height(6.dp))
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             starters.forEach { (label, type, icon) ->
                 Surface(
                     modifier = Modifier
-                        .weight(1f)
                         .clickable { onSelectType(type, label) },
                     color = theme.sidebarBg,
                     shape = RoundedCornerShape(4.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, theme.border)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(icon, contentDescription = null, tint = theme.accentColor, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Icon(icon, contentDescription = null, tint = theme.accentColor, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = label,
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color.White,
-                            maxLines = 1
+                            color = Color.White
                         )
                     }
                 }
@@ -446,6 +551,9 @@ fun WorkspaceCard(
     val (badgeColor, icon) = when (project.type) {
         ProjectType.CANVAS -> Color(0xFF39C5BB) to Icons.Default.SportsEsports
         ProjectType.WEB -> theme.accentColor to Icons.Default.Code
+        ProjectType.REACT -> Color(0xFF61DAFB) to Icons.Default.Language
+        ProjectType.VUE -> Color(0xFF42B883) to Icons.Default.Language
+        ProjectType.TAILWIND -> Color(0xFF38BDF8) to Icons.Default.Description
         ProjectType.PORTFOLIO -> Color(0xFF60A5FA) to Icons.Default.Language
         ProjectType.KOTLIN -> Color(0xFFBD93F9) to Icons.Default.Terminal
         ProjectType.PYTHON -> Color(0xFFFFD866) to Icons.Default.Terminal
@@ -564,7 +672,7 @@ fun EmptyProjectsCard(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Pick a template above or create a new project.",
+                text = "Pick a starter template above or create a new project.",
                 fontSize = 12.sp,
                 color = theme.textSecondary
             )
@@ -585,18 +693,28 @@ fun EmptyProjectsCard(
 fun NewProjectDialog(
     theme: AppEditorTheme,
     onDismiss: () -> Unit,
-    onCreate: (String, ProjectType) -> Unit
+    onCreate: (name: String, type: ProjectType, html: Boolean, css: Boolean, js: Boolean, py: Boolean, readme: Boolean) -> Unit
 ) {
     var projectName by remember { mutableStateOf("") }
-    var selectedType by remember { mutableStateOf(ProjectType.CANVAS) }
+    var selectedType by remember { mutableStateOf(ProjectType.WEB) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
+    // Language file selection checkboxes
+    var incHtml by remember { mutableStateOf(true) }
+    var incCss by remember { mutableStateOf(true) }
+    var incJs by remember { mutableStateOf(true) }
+    var incPy by remember { mutableStateOf(false) }
+    var incReadme by remember { mutableStateOf(false) }
+
     val options = listOf(
-        ProjectType.CANVAS to (Color(0xFF39C5BB) to Icons.Default.SportsEsports),
         ProjectType.WEB to (theme.accentColor to Icons.Default.Code),
+        ProjectType.REACT to (Color(0xFF61DAFB) to Icons.Default.Language),
+        ProjectType.VUE to (Color(0xFF42B883) to Icons.Default.Language),
+        ProjectType.TAILWIND to (Color(0xFF38BDF8) to Icons.Default.Description),
+        ProjectType.CANVAS to (Color(0xFF39C5BB) to Icons.Default.SportsEsports),
         ProjectType.PORTFOLIO to (Color(0xFF60A5FA) to Icons.Default.Language),
-        ProjectType.KOTLIN to (Color(0xFFBD93F9) to Icons.Default.Terminal),
         ProjectType.PYTHON to (Color(0xFFFFD866) to Icons.Default.Terminal),
+        ProjectType.KOTLIN to (Color(0xFFBD93F9) to Icons.Default.Terminal),
         ProjectType.BLANK to (Color(0xFF9CA3AF) to Icons.Default.Description)
     )
 
@@ -605,7 +723,7 @@ fun NewProjectDialog(
         containerColor = theme.sidebarBg,
         shape = RoundedCornerShape(8.dp),
         title = {
-            Text("Create Workspace", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text("Create New Workspace", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         },
         text = {
             Column {
@@ -622,7 +740,7 @@ fun NewProjectDialog(
                         projectName = it
                         errorMsg = null
                     },
-                    placeholder = { Text("my-workspace", fontSize = 12.sp, color = theme.textSecondary.copy(alpha = 0.5f)) },
+                    placeholder = { Text("my-app", fontSize = 12.sp, color = theme.textSecondary.copy(alpha = 0.5f)) },
                     singleLine = true,
                     isError = errorMsg != null,
                     supportingText = errorMsg?.let { { Text(it, color = Color(0xFFF85149)) } },
@@ -635,10 +753,10 @@ fun NewProjectDialog(
                     modifier = Modifier.fillMaxWidth().testTag("new_project_name_input")
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    "Select Starter Template",
+                    "Select Boilerplate Template",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = theme.textSecondary
@@ -646,8 +764,8 @@ fun NewProjectDialog(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 LazyColumn(
-                    modifier = Modifier.height(240.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier.height(180.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     items(options) { (type, meta) ->
                         val (badgeColor, icon) = meta
@@ -656,19 +774,32 @@ fun NewProjectDialog(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selectedType = type },
+                                .clickable {
+                                    selectedType = type
+                                    when (type) {
+                                        ProjectType.PYTHON -> {
+                                            incHtml = false; incCss = false; incJs = false; incPy = true
+                                        }
+                                        ProjectType.KOTLIN -> {
+                                            incHtml = false; incCss = false; incJs = false; incPy = false
+                                        }
+                                        else -> {
+                                            incHtml = true; incCss = true; incJs = true; incPy = false
+                                        }
+                                    }
+                                },
                             color = if (isSelected) theme.background else theme.sidebarBg,
                             shape = RoundedCornerShape(4.dp),
                             border = androidx.compose.foundation.BorderStroke(
-                                if (isSelected) 1.5.dp else 1.dp,
+                                if (isSelected) 1.5.dp else 0.5.dp,
                                 if (isSelected) theme.accentColor else theme.border
                             )
                         ) {
                             Row(
-                                modifier = Modifier.padding(8.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(icon, contentDescription = null, tint = badgeColor, modifier = Modifier.size(18.dp))
+                                Icon(icon, contentDescription = null, tint = badgeColor, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(
@@ -684,7 +815,7 @@ fun NewProjectDialog(
                                         )
                                         Text(
                                             text = type.badge,
-                                            fontSize = 9.sp,
+                                            fontSize = 8.5.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = badgeColor,
                                             modifier = Modifier
@@ -692,15 +823,62 @@ fun NewProjectDialog(
                                                 .padding(horizontal = 4.dp, vertical = 1.dp)
                                         )
                                     }
-                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = type.description,
                                         fontSize = 10.sp,
                                         color = theme.textSecondary,
-                                        lineHeight = 13.sp
+                                        lineHeight = 12.sp
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Custom Language Files Selection
+                Text(
+                    "Include Language Files",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = theme.textSecondary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+
+                val fileOptions = listOf(
+                    Triple("HTML", incHtml) { incHtml = !incHtml },
+                    Triple("CSS", incCss) { incCss = !incCss },
+                    Triple("JS", incJs) { incJs = !incJs },
+                    Triple("Python", incPy) { incPy = !incPy },
+                    Triple("README", incReadme) { incReadme = !incReadme }
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    fileOptions.forEach { (label, isChecked, onToggle) ->
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onToggle() },
+                            color = if (isChecked) theme.accentColor.copy(alpha = 0.2f) else Color(0x14FFFFFF),
+                            shape = RoundedCornerShape(3.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                0.5.dp,
+                                if (isChecked) theme.accentColor else theme.border
+                            )
+                        ) {
+                            Text(
+                                text = (if (isChecked) "✓ " else "") + label,
+                                fontSize = 9.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = if (isChecked) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isChecked) theme.accentColor else theme.textSecondary,
+                                modifier = Modifier.padding(vertical = 4.dp, horizontal = 2.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
                         }
                     }
                 }
@@ -710,7 +888,7 @@ fun NewProjectDialog(
             Button(
                 onClick = {
                     val clean = projectName.trim().ifBlank { selectedType.displayName }
-                    onCreate(clean, selectedType)
+                    onCreate(clean, selectedType, incHtml, incCss, incJs, incPy, incReadme)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor),
                 shape = RoundedCornerShape(4.dp),

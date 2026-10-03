@@ -6,12 +6,15 @@ enum class ProjectType(
     val description: String,
     val isExecutableV01: Boolean
 ) {
-    WEB("Web Application", "HTML5", "HTML5, CSS & JS reactive starter with DOM events", true),
-    CANVAS("Canvas Physics Simulation", "CANVAS", "HTML5 Canvas particle wave with touch & pointer dynamics", true),
-    PORTFOLIO("Portfolio / Landing Page", "PORTFOLIO", "Modern dark developer portfolio with project showcases", true),
-    KOTLIN("Kotlin Algorithm", "KOTLIN", "Data classes, collection filtering, and sorting routines", false),
-    PYTHON("Python Script & Data", "PYTHON", "JSON data pipeline with record parsing and CLI entry", false),
-    BLANK("Blank Scratchpad", "EMPTY", "Minimal clean canvas to start writing code from scratch", true)
+    WEB("HTML5 Starter", "HTML5", "Clean HTML5, CSS & JS responsive boilerplate", true),
+    REACT("React 18 Starter", "REACT", "React 18 with Babel JSX transformer & component state", true),
+    VUE("Vue 3 Starter", "VUE", "Vue 3 reactive starter with template compiler", true),
+    TAILWIND("Tailwind CSS", "TAILWIND", "HTML5 layout styled with Tailwind CSS utility classes", true),
+    CANVAS("Canvas 2D Graphics", "CANVAS", "HTML5 Canvas 2D render loop and animation scaffold", true),
+    PORTFOLIO("Portfolio Landing", "PORTFOLIO", "Developer portfolio with project showcases & themes", true),
+    PYTHON("Python Script", "PYTHON", "Python 3 entry script with argument handling & utils", true),
+    KOTLIN("Kotlin Script", "KOTLIN", "Kotlin JVM entry with collection algorithms & main()", true),
+    BLANK("Custom Multi-File", "CUSTOM", "Pick custom language files (HTML, CSS, JS, Python, README)", true)
 }
 
 data class Project(

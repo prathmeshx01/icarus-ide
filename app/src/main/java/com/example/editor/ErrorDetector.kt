@@ -42,6 +42,17 @@ object ErrorDetector {
         return diagnostics.sortedBy { it.line }
     }
 
+    fun autoFixAll(code: String, extension: String): String {
+        var current = code
+        val diagnostics = detectErrors(current, extension)
+        for (d in diagnostics) {
+            d.quickFix?.let { fix ->
+                current = fix.applyFix(current)
+            }
+        }
+        return current
+    }
+
     private fun checkBrackets(code: String, diagnostics: MutableList<CodeDiagnostic>) {
         val stack = ArrayDeque<Pair<Char, Int>>() // char to index
         var inSingleQuote = false

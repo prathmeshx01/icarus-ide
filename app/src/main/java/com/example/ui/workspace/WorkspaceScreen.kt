@@ -9,6 +9,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -25,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Css
@@ -143,6 +145,7 @@ fun WorkspaceScreen(
     if (state.isPreviewOpen && state.project != null) {
         WebPreviewPane(
             project = state.project!!,
+            openTabs = state.openTabs,
             consoleLogs = state.consoleLogs,
             onConsoleLog = { level, msg, src, line ->
                 viewModel.addConsoleLog(level, msg, src, line)
@@ -288,11 +291,11 @@ fun WorkspaceScreen(
                             }
                         }
 
-                        // Run / Preview Button with Error Status Indication
+                        // Run / Preview Button with Error Status Indication (Matches Mockup)
                         val severeErrorCount = remember(state.diagnostics) {
                             state.diagnostics.count { it.severity == DiagnosticSeverity.ERROR }
                         }
-                        val buttonColor = if (severeErrorCount > 0) Color(0xFFD29922) else theme.accentColor
+                        val buttonColor = if (severeErrorCount > 0) Color(0xFFD29922) else Color(0xFF238636)
 
                         Button(
                             onClick = { viewModel.runProject() },
@@ -300,14 +303,15 @@ fun WorkspaceScreen(
                                 containerColor = buttonColor,
                                 contentColor = Color.White
                             ),
-                            shape = RoundedCornerShape(4.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                             modifier = Modifier
-                                .padding(end = 8.dp)
-                                .height(30.dp)
+                                .padding(end = 4.dp)
+                                .height(28.dp)
                                 .testTag("workspace_run_btn")
                         ) {
                             if (severeErrorCount > 0) {
-                                Icon(Icons.Default.WarningAmber, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Icon(Icons.Default.WarningAmber, contentDescription = null, modifier = Modifier.size(13.dp))
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
                                     text = "Preview ($severeErrorCount)",
@@ -315,31 +319,71 @@ fun WorkspaceScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                             } else {
-                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(13.dp))
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
-                                    text = if (state.project?.type?.isExecutableV01 == true) "Preview" else "Run",
+                                    text = "Run",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
                         }
+
+                        // Save Checkmark Button
+                        IconButton(
+                            onClick = { viewModel.saveCurrentTab(formatOnSave = settings.formatOnSave) },
+                            modifier = Modifier.size(32.dp).testTag("workspace_save_btn")
+                        ) {
+                            Icon(
+                                Icons.Default.Save,
+                                contentDescription = "Save",
+                                tint = if (hasDirty) Color(0xFFD29922) else Color(0xFF3FB950),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        // Settings Trigger
+                        IconButton(
+                            onClick = onNavigateToSettings,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 )
             },
             bottomBar = {
-                // High-Density Status Bar
-                EditorStatusBar(
-                    cursorLine = state.cursorLine,
-                    cursorColumn = state.cursorColumn,
-                    diagnosticsCount = state.diagnostics.size,
-                    fileExtension = state.openTabs.getOrNull(state.activeTabIndex)?.file?.extension ?: "txt",
-                    theme = theme,
-                    tabSize = settings.tabSize,
-                    onToggleProblems = { viewModel.toggleProblems() },
-                    onFormat = { viewModel.formatDocument() },
-                    onOpenSettings = onNavigateToSettings
-                )
+                Column(modifier = Modifier.fillMaxWidth().background(theme.statusBarBg)) {
+                    // High-Density Status Bar
+                    EditorStatusBar(
+                        cursorLine = state.cursorLine,
+                        cursorColumn = state.cursorColumn,
+                        diagnosticsCount = state.diagnostics.size,
+                        fileExtension = state.openTabs.getOrNull(state.activeTabIndex)?.file?.extension ?: "txt",
+                        theme = theme,
+                        tabSize = settings.tabSize,
+                        onToggleProblems = { viewModel.toggleProblems() },
+                        onFormat = { viewModel.formatDocument() },
+                        onOpenSettings = onNavigateToSettings
+                    )
+
+                    // 3-Pane Canonical IDE Bottom Navigation Bar (Matching Mockup)
+                    IdeBottomNavBar(
+                        theme = theme,
+                        onOpenFiles = { scope.launch { drawerState.open() } },
+                        onOpenEditor = {
+                            if (state.isTerminalOpen) viewModel.toggleTerminal()
+                        },
+                        onOpenConsole = {
+                            viewModel.runProject()
+                        }
+                    )
+                }
             },
             containerColor = theme.background
         ) { paddingValues ->
@@ -359,6 +403,54 @@ fun WorkspaceScreen(
                         onCloseOthers = { viewModel.closeOtherTabs(it) },
                         onCloseAll = { viewModel.closeAllTabs() }
                     )
+
+                    // Breadcrumb Path & LSP Status Line (Matches Mockup)
+                    val currentTab = state.openTabs.getOrNull(state.activeTabIndex)
+                    if (currentTab != null) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(26.dp),
+                            color = theme.background,
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, theme.border)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f, fill = false),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${state.project?.name ?: "workspace"}  >  ${currentTab.file.relativePath}",
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = theme.textSecondary,
+                                        maxLines = 1
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .background(Color(0xFF3FB950), CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "LSP Ready",
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF3FB950)
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     // Code Editor or Empty State
                     if (state.openTabs.isNotEmpty() && state.activeTabIndex in state.openTabs.indices) {
@@ -383,7 +475,6 @@ fun WorkspaceScreen(
                             onValueChange = { viewModel.onEditorTextChange(it) },
                             onInsertSymbol = { text, offset -> viewModel.insertSymbolWithOffset(text, offset) },
                             onIndentLine = { viewModel.indentCurrentLine() },
-                            onApplyQuickFix = { viewModel.applyQuickFix(it) },
                             onSearchQueryChange = { viewModel.setSearchQuery(it) },
                             onReplaceQueryChange = { viewModel.setReplaceQuery(it) },
                             onFindNext = { isRegex -> viewModel.findNext(isRegex) },
@@ -1010,6 +1101,97 @@ fun EmptyEditorState(
                 shape = RoundedCornerShape(4.dp)
             ) {
                 Text("Open Explorer", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun IdeBottomNavBar(
+    theme: AppEditorTheme,
+    onOpenFiles: () -> Unit,
+    onOpenEditor: () -> Unit,
+    onOpenConsole: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(42.dp),
+        color = theme.sidebarBg,
+        border = androidx.compose.foundation.BorderStroke(1.dp, theme.border)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Files Tab
+            Row(
+                modifier = Modifier
+                    .clickable(onClick = onOpenFiles)
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Folder,
+                    contentDescription = "Files",
+                    tint = theme.textSecondary,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Files",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = theme.textSecondary
+                )
+            }
+
+            // Editor Tab
+            Row(
+                modifier = Modifier
+                    .background(theme.background, RoundedCornerShape(4.dp))
+                    .border(1.dp, theme.border, RoundedCornerShape(4.dp))
+                    .clickable(onClick = onOpenEditor)
+                    .padding(horizontal = 14.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Code,
+                    contentDescription = "Editor",
+                    tint = theme.accentColor,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Editor",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+
+            // Console Tab
+            Row(
+                modifier = Modifier
+                    .clickable(onClick = onOpenConsole)
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Terminal,
+                    contentDescription = "Console",
+                    tint = theme.textSecondary,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Console",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = theme.textSecondary
+                )
             }
         }
     }

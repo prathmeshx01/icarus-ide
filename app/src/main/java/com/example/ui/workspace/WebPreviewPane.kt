@@ -32,8 +32,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Tablet
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -42,6 +47,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -60,7 +67,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.example.editor.PreviewBundler
 import com.example.model.ConsoleLogEntry
+import com.example.model.EditorTab
 import com.example.model.Project
 import com.example.ui.theme.ZincAccent
 import com.example.ui.theme.ZincBackground
@@ -74,11 +83,18 @@ import com.example.ui.theme.ZincTextPrimary
 import com.example.ui.theme.ZincTextSecondary
 import java.io.File
 
+enum class PreviewViewport(val label: String, val widthDp: Int?) {
+    RESPONSIVE("Responsive", null),
+    MOBILE("Phone (375px)", 375),
+    TABLET("Tablet (600px)", 600)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun WebPreviewPane(
     project: Project,
+    openTabs: List<EditorTab> = emptyList(),
     consoleLogs: List<ConsoleLogEntry>,
     onConsoleLog: (level: String, message: String, sourceId: String?, lineNumber: Int?) -> Unit,
     onClearLogs: () -> Unit,
@@ -87,7 +103,8 @@ fun WebPreviewPane(
 ) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var showConsole by remember { mutableStateOf(false) }
-    var reloadTrigger by remember { mutableStateOf(0) }
+    var reloadCount by remember { mutableStateOf(0) }
+    var currentViewport by remember { mutableStateOf(PreviewViewport.RESPONSIVE) }
 
     val errorCount = remember(consoleLogs) {
         consoleLogs.count { it.level.equals("ERROR", ignoreCase = true) }
@@ -104,7 +121,7 @@ fun WebPreviewPane(
         color = ZincBackground
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Preview Header Bar
+            // Enhanced Output Screen Top Bar
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = ZincSurface,
@@ -118,7 +135,10 @@ fun WebPreviewPane(
                     }
                 },
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 4.dp)
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
@@ -126,37 +146,78 @@ fun WebPreviewPane(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = project.name,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    maxLines = 1
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "OFFLINE",
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ZincGreen,
+                                    modifier = Modifier
+                                        .background(ZincGreen.copy(alpha = 0.15f), RoundedCornerShape(3.dp))
+                                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
                             Text(
-                                text = "Preview: ${project.name}",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                            Text(
-                                text = if (errorCount > 0) "Offline Preview • $errorCount Error(s)" else "Offline Preview • Healthy",
-                                fontSize = 11.sp,
-                                color = if (errorCount > 0) ZincRed else ZincTextSecondary
+                                text = "file://${File(project.rootDirPath).name}/index.html",
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = ZincTextSecondary,
+                                maxLines = 1
                             )
                         }
                     }
                 },
                 actions = {
+                    // Viewport Mode Switcher
+                    IconButton(
+                        onClick = {
+                            currentViewport = when (currentViewport) {
+                                PreviewViewport.RESPONSIVE -> PreviewViewport.MOBILE
+                                PreviewViewport.MOBILE -> PreviewViewport.TABLET
+                                PreviewViewport.TABLET -> PreviewViewport.RESPONSIVE
+                            }
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = when (currentViewport) {
+                                PreviewViewport.RESPONSIVE -> Icons.Default.Devices
+                                PreviewViewport.MOBILE -> Icons.Default.PhoneAndroid
+                                PreviewViewport.TABLET -> Icons.Default.Tablet
+                            },
+                            contentDescription = "Switch Viewport: ${currentViewport.label}",
+                            tint = if (currentViewport == PreviewViewport.RESPONSIVE) ZincTextSecondary else ZincAccent,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
                     // Reload Page
                     IconButton(
                         onClick = {
                             isErrorBannerDismissed = false
-                            reloadTrigger++
-                            webViewRef?.reload()
+                            reloadCount++
+                            webViewRef?.let { wv ->
+                                loadFreshContent(wv, project, openTabs, onConsoleLog)
+                            }
                         },
-                        modifier = Modifier.testTag("preview_reload_btn")
+                        modifier = Modifier.size(36.dp).testTag("preview_reload_btn")
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Reload Page", tint = Color.White)
+                        Icon(Icons.Default.Refresh, contentDescription = "Reload Page", tint = Color.White, modifier = Modifier.size(18.dp))
                     }
 
                     // Console Drawer Toggle with Badge
                     IconButton(
                         onClick = { showConsole = !showConsole },
-                        modifier = Modifier.testTag("preview_console_toggle_btn")
+                        modifier = Modifier.size(36.dp).testTag("preview_console_toggle_btn")
                     ) {
                         BadgedBox(
                             badge = {
@@ -171,24 +232,35 @@ fun WebPreviewPane(
                             Icon(
                                 Icons.Default.Terminal,
                                 contentDescription = "Console Logs",
-                                tint = if (showConsole) ZincAccent else (if (errorCount > 0) ZincRed else Color.White)
+                                tint = if (showConsole) ZincAccent else (if (errorCount > 0) ZincRed else Color.White),
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.width(4.dp))
                 }
             )
 
-            // Content Area: WebView & Optional Bottom Console Pane & In-Preview Error Overlay
+            // Content Area: Centered Frame (for Phone/Tablet) or Full-Width
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .background(Color(0xFF090A0C)),
+                contentAlignment = Alignment.TopCenter
             ) {
-                // The Native Android WebView running 100% offline code
+                val webViewModifier = if (currentViewport.widthDp != null) {
+                    Modifier
+                        .width(currentViewport.widthDp!!.dp)
+                        .fillMaxHeight()
+                        .padding(vertical = 8.dp)
+                        .border(1.dp, ZincBorder, RoundedCornerShape(8.dp))
+                } else {
+                    Modifier.fillMaxSize()
+                }
+
                 AndroidView(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("local_webview_pane"),
+                    modifier = webViewModifier.testTag("local_webview_pane"),
                     factory = { context ->
                         WebView(context).apply {
                             settings.apply {
@@ -209,7 +281,7 @@ fun WebPreviewPane(
                                 ) {
                                     val url = request?.url?.toString() ?: ""
                                     val desc = error?.description?.toString() ?: "Resource load failed"
-                                    onConsoleLog("ERROR", "Offline Asset Error: $desc ($url)", null, null)
+                                    onConsoleLog("ERROR", "Asset Error: $desc ($url)", null, null)
                                 }
                             }
 
@@ -228,14 +300,12 @@ fun WebPreviewPane(
                                 }
                             }
 
-                            loadOfflineProject(this, project, onConsoleLog)
+                            loadFreshContent(this, project, openTabs, onConsoleLog)
                             webViewRef = this
                         }
                     },
                     update = { webView ->
-                        if (reloadTrigger > 0) {
-                            loadOfflineProject(webView, project, onConsoleLog)
-                        }
+                        loadFreshContent(webView, project, openTabs, onConsoleLog)
                     }
                 )
 
@@ -295,16 +365,21 @@ fun WebPreviewPane(
                     }
                 }
 
-                // Slide-up Developer Console Drawer
+                // Slide-up Developer Console Drawer with REPL Runner
                 if (showConsole) {
                     ConsoleLogPanel(
                         logs = consoleLogs,
                         onClear = onClearLogs,
                         onClose = { showConsole = false },
+                        onExecuteJs = { code ->
+                            webViewRef?.evaluateJavascript(code) { result ->
+                                onConsoleLog("LOG", "> $code\n< $result", "REPL", 1)
+                            }
+                        },
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
-                            .fillMaxHeight(0.45f)
+                            .fillMaxHeight(0.5f)
                     )
                 }
             }
@@ -313,82 +388,24 @@ fun WebPreviewPane(
 }
 
 /**
- * Loads project files into WebView with offline error boundary instrumentation.
+ * Loads project files into WebView bundled with all local CSS/JS to guarantee instant updates.
  */
-private fun loadOfflineProject(
+private fun loadFreshContent(
     webView: WebView,
     project: Project,
+    openTabs: List<EditorTab>,
     onConsoleLog: (String, String, String?, Int?) -> Unit
 ) {
     val projectDir = File(project.rootDirPath)
-    val indexHtml = File(projectDir, "index.html")
+    val bundledHtml = PreviewBundler.bundleHtml(project, openTabs)
 
-    if (indexHtml.exists()) {
-        var rawHtml = indexHtml.readText(Charsets.UTF_8)
-
-        // Offline Error Instrumentation Script
-        val offlineErrorCatchScript = """
-            <script id="__icarus_error_catcher">
-            window.onerror = function(msg, url, line, col, error) {
-                var cleanUrl = url ? url.substring(url.lastIndexOf('/') + 1) : 'script.js';
-                var formatted = msg + ' (' + cleanUrl + ':' + line + ')';
-                console.error(formatted);
-                return false;
-            };
-            window.addEventListener('unhandledrejection', function(event) {
-                var reason = event.reason ? (event.reason.message || event.reason) : 'Unknown Promise Error';
-                console.error('Unhandled Promise: ' + reason);
-            });
-            </script>
-        """.trimIndent()
-
-        // Inject script right inside <head> or at the top of <html>
-        val instrumentedHtml = if (rawHtml.contains("<head>", ignoreCase = true)) {
-            rawHtml.replaceFirst("<head>", "<head>\n$offlineErrorCatchScript", ignoreCase = true)
-        } else if (rawHtml.contains("<html>", ignoreCase = true)) {
-            rawHtml.replaceFirst("<html>", "<html>\n<head>$offlineErrorCatchScript</head>", ignoreCase = true)
-        } else {
-            "$offlineErrorCatchScript\n$rawHtml"
-        }
-
-        webView.loadDataWithBaseURL(
-            "file://${projectDir.absolutePath}/",
-            instrumentedHtml,
-            "text/html",
-            "UTF-8",
-            null
-        )
-    } else {
-        // Offline Fallback View
-        val fallbackHtml = """
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <meta charset="UTF-8">
-              <style>
-                body { background: #0f1012; color: #fff; font-family: -apple-system, sans-serif; padding: 2rem; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
-                h1 { color: #388bfd; font-size: 1.5rem; margin-bottom: 0.5rem; }
-                p { color: #8b949e; font-size: 0.95rem; max-width: 320px; line-height: 1.5; }
-                .code { background: #1a1d24; padding: 0.5rem 1rem; border-radius: 6px; font-family: monospace; color: #79c0ff; margin-top: 1rem; border: 1px solid #282c34; }
-              </style>
-            </head>
-            <body>
-              <h1>index.html Not Found</h1>
-              <p>The offline web engine requires an entry point file to render your workspace.</p>
-              <div class="code">Create index.html in the workspace root</div>
-            </body>
-            </html>
-        """.trimIndent()
-
-        webView.loadDataWithBaseURL(
-            "file://${projectDir.absolutePath}/",
-            fallbackHtml,
-            "text/html",
-            "UTF-8",
-            null
-        )
-        onConsoleLog("WARN", "index.html not found in ${project.name}", null, null)
-    }
+    webView.loadDataWithBaseURL(
+        "file://${projectDir.absolutePath}/",
+        bundledHtml,
+        "text/html",
+        "UTF-8",
+        null
+    )
 }
 
 @Composable
@@ -396,8 +413,17 @@ fun ConsoleLogPanel(
     logs: List<ConsoleLogEntry>,
     onClear: () -> Unit,
     onClose: () -> Unit,
+    onExecuteJs: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var filterLevel by remember { mutableStateOf("ALL") }
+    var replInput by remember { mutableStateOf("") }
+
+    val filteredLogs = remember(logs, filterLevel) {
+        if (filterLevel == "ALL") logs
+        else logs.filter { it.level.equals(filterLevel, ignoreCase = true) }
+    }
+
     Surface(
         modifier = modifier,
         color = ZincSurfaceElevated,
@@ -405,7 +431,7 @@ fun ConsoleLogPanel(
         border = androidx.compose.foundation.BorderStroke(1.dp, ZincBorder)
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(10.dp)) {
-            // Console Header
+            // Console Header with Filter Tabs
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -425,96 +451,175 @@ fun ConsoleLogPanel(
                         fontSize = 13.sp,
                         color = Color.White
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "(${logs.size})",
-                        fontSize = 11.sp,
-                        color = ZincTextSecondary
-                    )
                 }
 
-                Row {
-                    IconButton(onClick = onClear, modifier = Modifier.size(28.dp)) {
-                        Icon(
-                            Icons.Default.DeleteOutline,
-                            contentDescription = "Clear logs",
-                            tint = ZincTextSecondary,
-                            modifier = Modifier.size(16.dp)
-                        )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf("ALL", "ERROR", "WARN", "LOG").forEach { lvl ->
+                        val isSelected = filterLevel == lvl
+                        Surface(
+                            modifier = Modifier
+                                .clickable { filterLevel = lvl }
+                                .padding(vertical = 2.dp),
+                            color = if (isSelected) ZincAccent else Color(0x1AFFFFFF),
+                            shape = RoundedCornerShape(3.dp)
+                        ) {
+                            Text(
+                                text = lvl,
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) Color.White else ZincTextSecondary,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
                     }
-                    IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Close console",
-                            tint = ZincTextSecondary,
-                            modifier = Modifier.size(16.dp)
-                        )
+
+                    IconButton(onClick = onClear, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "Clear", tint = ZincTextSecondary, modifier = Modifier.size(14.dp))
+                    }
+                    IconButton(onClick = onClose, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = ZincTextSecondary, modifier = Modifier.size(14.dp))
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            if (logs.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "No console output. Call console.log() in script.js",
-                        color = ZincTextMuted,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(ZincBackground, RoundedCornerShape(4.dp))
-                        .padding(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(logs) { entry ->
-                        val badgeColor = when (entry.level) {
-                            "ERROR" -> ZincRed
-                            "WARN" -> Color(0xFFD29922)
-                            else -> ZincAccent
-                        }
+            // Log output list
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                if (filteredLogs.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No console output. Run code or call console.log()",
+                            color = ZincTextMuted,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(ZincBackground, RoundedCornerShape(4.dp))
+                            .padding(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(filteredLogs) { entry ->
+                            val badgeColor = when (entry.level) {
+                                "ERROR" -> ZincRed
+                                "WARN" -> Color(0xFFD29922)
+                                else -> ZincAccent
+                            }
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Text(
-                                text = entry.level,
-                                color = badgeColor,
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .background(badgeColor.copy(alpha = 0.15f), RoundedCornerShape(2.dp))
-                                    .padding(horizontal = 4.dp, vertical = 1.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.Top
+                            ) {
                                 Text(
-                                    text = entry.message,
-                                    color = if (entry.level == "ERROR") Color(0xFFFFB4B4) else ZincTextPrimary,
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace
+                                    text = entry.level,
+                                    color = badgeColor,
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .background(badgeColor.copy(alpha = 0.15f), RoundedCornerShape(2.dp))
+                                        .padding(horizontal = 4.dp, vertical = 1.dp)
                                 )
-                                if (entry.lineNumber != null && entry.lineNumber > 0) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "at line ${entry.lineNumber}",
-                                        color = ZincTextMuted,
-                                        fontSize = 10.sp,
+                                        text = entry.message,
+                                        color = if (entry.level == "ERROR") Color(0xFFFFB4B4) else ZincTextPrimary,
+                                        fontSize = 11.sp,
                                         fontFamily = FontFamily.Monospace
                                     )
+                                    if (entry.lineNumber != null && entry.lineNumber > 0) {
+                                        Text(
+                                            text = "at line ${entry.lineNumber}",
+                                            color = ZincTextMuted,
+                                            fontSize = 9.sp,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Quick Action Snippet Bar (Matching Mockup)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("SNIPS:", fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = ZincTextMuted, fontWeight = FontWeight.Bold)
+                listOf("npm test", "build", "git status", "lint", "clear").forEach { snippet ->
+                    Surface(
+                        modifier = Modifier
+                            .clickable {
+                                if (snippet == "clear") {
+                                    onClear()
+                                } else {
+                                    replInput = snippet
+                                }
+                            }
+                            .padding(vertical = 2.dp),
+                        color = Color(0x1AFFFFFF),
+                        shape = RoundedCornerShape(3.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, ZincBorder)
+                    ) {
+                        Text(
+                            text = snippet,
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = ZincTextSecondary,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // REPL Interactive Evaluator
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = replInput,
+                    onValueChange = { replInput = it },
+                    placeholder = { Text("eval: console.log(window.icarus)", fontSize = 11.sp, color = ZincTextMuted) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = ZincAccent,
+                        unfocusedBorderColor = ZincBorder,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    modifier = Modifier.weight(1f).height(38.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Button(
+                    onClick = {
+                        val cmd = replInput.trim()
+                        if (cmd.isNotBlank()) {
+                            onExecuteJs(cmd)
+                            replInput = ""
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ZincAccent),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.height(34.dp)
+                ) {
+                    Text("EXEC ↵", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
         }

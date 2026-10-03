@@ -54,9 +54,25 @@ class HomeViewModel(
         _uiState.update { it.copy(showNewProjectDialog = false) }
     }
 
-    fun createProject(name: String, type: ProjectType) {
+    fun createProject(
+        name: String,
+        type: ProjectType,
+        includeHtml: Boolean = true,
+        includeCss: Boolean = true,
+        includeJs: Boolean = true,
+        includePy: Boolean = false,
+        includeReadme: Boolean = false
+    ) {
         viewModelScope.launch {
-            val project = projectRepository.createProject(name, type)
+            val project = projectRepository.createProject(
+                name = name,
+                type = type,
+                includeHtml = includeHtml,
+                includeCss = includeCss,
+                includeJs = includeJs,
+                includePy = includePy,
+                includeReadme = includeReadme
+            )
             _uiState.update { it.copy(showNewProjectDialog = false) }
             _events.emit(HomeEvent.NavigateToWorkspace(project))
         }
